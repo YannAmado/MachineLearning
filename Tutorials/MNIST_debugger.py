@@ -10,8 +10,9 @@ class Network:
         a = []
         z = []
         for l in range(0, len(layers)):
-            b.append(np.random.normal(loc=0, scale=1, size=layers[l]))
+            # skipping one layer for the weights and biases
             if (l + 1) < len(layers):
+                b.append(np.random.normal(loc=0, scale=1, size=layers[l + 1]))
                 w.append(np.random.normal(loc=0, scale=3, size=[layers[l], layers[l + 1]]))
             a.append(np.zeros(layers[l]))
             z.append(np.zeros(layers[l]))
@@ -34,14 +35,14 @@ def ReLU_derivative(n):
 
 
 def feedForward(net: Network) -> Network:
-    for l in range(1, net.nLayers):
-        for receivingNeuron in range(net.layers[l]):
+    for l in range(0, net.nLayers - 1):
+        for receivingNeuron in range(net.layers[l + 1]):
             # resetting the z as to not take any info from the activation of the previous number
-            net.z[l][receivingNeuron] = 0
-            for givingNeuron in range(net.layers[l - 1]):
-                net.z[l][receivingNeuron] += net.a[l - 1][givingNeuron] * net.w[l - 1][givingNeuron][receivingNeuron]
-            net.z[l][receivingNeuron] += net.b[l][receivingNeuron]
-            net.a[l][receivingNeuron] = ReLU(net.z[l][receivingNeuron])
+            net.z[l + 1][receivingNeuron] = 0
+            for givingNeuron in range(net.layers[l]):
+                net.z[l + 1][receivingNeuron] += net.a[l][givingNeuron] * net.w[l][givingNeuron][receivingNeuron]
+            net.z[l + 1][receivingNeuron] += net.b[l][receivingNeuron]
+            net.a[l + 1][receivingNeuron] = ReLU(net.z[l + 1][receivingNeuron])
 
     return net
 
