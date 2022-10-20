@@ -78,7 +78,7 @@ def backProp(net: Network, delta, batchSize, learningRate) -> Network:
     return net
 
 
-def SGD(net: Network, X: list, y: list, batchSize: int, nEpochs, learningRate):
+def SGD(net: Network, X: list, y: list, batchSize: int, nEpochs: int, learningRate) -> Network:
     for epoch in range(nEpochs):
         print(epoch)
         delta = 0
@@ -86,7 +86,11 @@ def SGD(net: Network, X: list, y: list, batchSize: int, nEpochs, learningRate):
         for i in batch:
             number = np.asarray(X[i]).flatten()
             net = setInput(net, number)
-            delta += (net.a[-1] - y[i]) * ReLU_derivative(net.z[-1])
+            for j in range(net.layers[-1]):
+                if y[i] == (j + 1):
+                    delta += (net.a[-1][j] - 1) * ReLU_derivative(net.z[-1])
+                else:
+                    delta += (net.a[-1][j] - 0) * ReLU_derivative(net.z[-1])
 
         # taking the average of the results
         delta = delta / batchSize
