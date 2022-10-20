@@ -66,21 +66,25 @@ def backProp(net: Network, delta, batchSize, learningRate) -> Network:
             for k in range(layers[l - 1]):
                 nablaW[k][j] += net.a[l - 1][k] * delta[j]
 
-        net.b[l - 1] = net.b[l - 1] + learningRate * (nablaB / batchSize)
-        net.w[l - 1] = net.w[l - 1] + learningRate * (nablaW / batchSize)
+        net.b[l - 1] = net.b[l - 1] - learningRate * (nablaB / batchSize)
+        net.w[l - 1] = net.w[l - 1] - learningRate * (nablaW / batchSize)
 
         # finding the error one layer behind
         # in the book it needs a transpose because its weight[layer][receivingNeuron][givingNeuron]
         # but my implementation uses weight[layer][givingNeuron][receivingNeuron] so it's not necessary
-        delta = (np.dot(net.w[l - 1], delta)) * ReLU_derivative(net.z[l - 2])
+        if l >= 0:
+            delta = (np.dot(net.w[l - 1], delta)) * ReLU_derivative(net.z[l - 1])
+
+    return net
 
 
 def SGD(net: Network, X: list, y: list, batchSize: int, nEpochs, learningRate):
     for epoch in range(nEpochs):
+        print(epoch)
         delta = 0
         batch = rd.sample(range(len(X)), batchSize)
         for i in batch:
-            number = np.squeeze(X[i])
+            number = np.asarray(X[i]).flatten()
             net = setInput(net, number)
             delta += (net.a[-1] - y[i]) * ReLU_derivative(net.z[-1])
 
@@ -88,6 +92,7 @@ def SGD(net: Network, X: list, y: list, batchSize: int, nEpochs, learningRate):
         delta = delta / batchSize
         net = backProp(net, delta, batchSize, learningRate)
     return net
+
 
 net = Network([784,30,10])
 train_X = mnist.train_images()
