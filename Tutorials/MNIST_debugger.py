@@ -26,12 +26,13 @@ class Network:
         self.nLayers = len(layers)
         self.layers = layers
 
-def ReLU(n: int):
-    return max(0, n)
+def sigmoid(n: float):
+    return 1.0/(1.0+np.exp(-n))
 
-def ReLU_derivative(n):
-    n = np.where(n <= 0, 0, 1)
-    return n
+def sigmoid_derivative(n: float):
+    """Derivative of the sigmoid function."""
+    return sigmoid(n)*(1-sigmoid(n))
+
 
 
 def feedForward(net: Network) -> Network:
@@ -42,14 +43,15 @@ def feedForward(net: Network) -> Network:
             for givingNeuron in range(net.layers[l]):
                 net.z[l + 1][receivingNeuron] += net.a[l][givingNeuron] * net.w[l][givingNeuron][receivingNeuron]
             net.z[l + 1][receivingNeuron] += net.b[l][receivingNeuron]
-            net.a[l + 1][receivingNeuron] = ReLU(net.z[l + 1][receivingNeuron])
+            net.a[l + 1][receivingNeuron] = sigmoid(net.z[l + 1][receivingNeuron])
 
     return net
 
 
 def setInput(net: Network, MNISTnumber):
-    for i in MNISTnumber:
-        net.a[0][i] = i
+    numberArr = np.asarray(MNISTnumber).flatten()
+    for i in range(net.layers[0]):
+        net.a[0][i] = numberArr[i]
     net = feedForward(net)
 
     return net
@@ -73,7 +75,7 @@ def backProp(net: Network, delta, batchSize, learningRate) -> Network:
         # in the book it needs a transpose because its weight[layer][receivingNeuron][givingNeuron]
         # but my implementation uses weight[layer][givingNeuron][receivingNeuron] so it's not necessary
         if l >= 0:
-            delta = (np.dot(net.w[l - 1], delta)) * ReLU_derivative(net.z[l - 1])
+            delta = (np.dot(net.w[l - 1], delta)) * sigmoid_derivative(net.z[l - 1])
 
     return net
 
@@ -84,13 +86,13 @@ def SGD(net: Network, X: list, y: list, batchSize: int, nEpochs: int, learningRa
         delta = 0
         batch = rd.sample(range(len(X)), batchSize)
         for i in batch:
-            number = np.asarray(X[i]).flatten()
-            net = setInput(net, number)
+            net = setInput(net, X[i])
+            # not too sure about the meaning of the y in the equation (a^L_j - y_j)
             for j in range(net.layers[-1]):
-                if y[i] == (j + 1):
-                    delta += (net.a[-1][j] - 1) * ReLU_derivative(net.z[-1])
+                if y[i] == j:
+                    delta += (net.a[-1][j] - 1) * sigmoid_derivative(net.z[-1])
                 else:
-                    delta += (net.a[-1][j] - 0) * ReLU_derivative(net.z[-1])
+                    delta += (net.a[-1][j] - 0) * sigmoid_derivative(net.z[-1])
 
         # taking the average of the results
         delta = delta / batchSize
