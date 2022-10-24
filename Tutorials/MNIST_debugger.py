@@ -61,49 +61,49 @@ def setInput(net: Network, MNISTnumber):
     return net
 
 
-def backProp(net: Network, delta, learningRate) -> Network:
+def backProp(net: Network, y) -> Network:
     layers = net.layers
+    nablaB = [np.zeros(i.shape) for i in net.b]
+    nablaW = [np.zeros(i.shape) for i in net.w]
+    delta = np.zeros(10)  # 10 because its the possible number of outputs
+    for j in range(net.layers[-1]):
+        if y == j:
+            delta[j] += (net.a[-1][j] - 1) * sigmoid_derivative(net.z[-1][j])
+        else:
+            delta[j] += (net.a[-1][j] - 0) * sigmoid_derivative(net.z[-1][j])
     for l in range(net.nLayers - 1, 0, -1):
-        nablaB = delta
+        #nablaB and nablaW have -1 because they only have 2 layers instead of 3
+        nablaB[l - 1] = delta
 
         # not too sure about nablaW
-        nablaW = np.zeros([layers[l - 1], layers[l]])
         for j in range(layers[l]):
             for k in range(layers[l - 1]):
-                nablaW[k][j] += net.a[l - 1][k] * delta[j]
-
-        net.b[l - 1] = net.b[l - 1] - learningRate * nablaB
-        net.w[l - 1] = net.w[l - 1] - learningRate * nablaW
+                nablaW[l - 1][k][j] += net.a[l - 1][k] * delta[j]
 
         # finding the error one layer behind
         # in the book it needs a transpose because its weight[layer][receivingNeuron][givingNeuron]
         # but my implementation uses weight[layer][givingNeuron][receivingNeuron] so it's not necessary
-        if l >= 0:
-            delta = (np.dot(net.w[l - 1], delta)) * sigmoid_derivative(net.z[l - 1])
+        delta = (np.dot(net.w[l - 1], delta)) * sigmoid_derivative(net.z[l - 1])
 
-    return net
+    return nablaB, nablaW
 
 
 def SGD(net: Network, X: list, y: list, batchSize: int, nEpochs: int, learningRate) -> Network:
     for epoch in range(nEpochs):
         # print(epoch)
-        delta = np.zeros(10)  # 10 because its the possible number of outputs
         batch = rd.sample(range(len(X)), batchSize)
-        occ = np.zeros(10)
+        nablaB = [np.zeros(i.shape) for i in net.b]
+        nablaW = [np.zeros(i.shape) for i in net.w]
         for i in batch:
             net = setInput(net, X[i])
-            # not too sure about the meaning of the y in the equation (a^L_j - y_j)
-            # not sure about how the delta should be calculated
-            for j in range(net.layers[-1]):
-                if y[i] == j:
-                    delta[j] += (net.a[-1][j] - 1) * sigmoid_derivative(net.z[-1][j])
-                else:
-                    delta[j] += (net.a[-1][j] - 0) * sigmoid_derivative(net.z[-1][j])
-            occ[np.argmax(net.a[-1])] += 1
+            deltaNablaB, deltaNablaW = backProp(net, y[i])
+            for l in range(net.nLayers-1):
+                nablaB[l] += deltaNablaB[l]
+                nablaW[l] += deltaNablaW[l]
+        for l in range(net.nLayers - 1):
+            net.b[l] = net.b[l] - learningRate * (nablaB[l] / batchSize)
+            net.w[l] = net.w[l] - learningRate * (nablaW[l] / batchSize)
 
-        # taking the average of the results
-        delta = delta / batchSize
-        net = backProp(net, delta, learningRate)
     return net
 
 
