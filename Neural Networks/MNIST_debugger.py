@@ -1,141 +1,216 @@
 import numpy as np
 import random as rd
-import mnist
 
-class Network:
-    def __init__(self, layers: list):
-        np.random.seed(42)
-        b = []
-        w = []
-        a = []
-        z = []
-        for l in range(0, len(layers)):
-            # skipping one layer for the weights and biases
-            if (l + 1) < len(layers):
-                b.append(np.random.normal(loc=0, scale=1, size=layers[l + 1]))
-                w.append(np.random.normal(loc=0, scale=1, size=[layers[l], layers[l + 1]]))
-            a.append(np.zeros(layers[l]))
-            z.append(np.zeros(layers[l]))
-
-        # b[i][j] -> i is which layer, j which neuron
-        # w[i][j][k] -> i is which layer, j which neuron of the first layer, k which neuron of the second layer
-        self.b = b
-        self.w = w
-        self.a = a
-        self.z = z
-        self.nLayers = len(layers)
-        self.layers = layers
 
 def sigmoid(n: float):
-    return 1.0/(1.0+np.exp(-n))
+    return 1.0 / (1.0 + np.exp(-n))
+
 
 def sigmoid_derivative(n: float):
     """Derivative of the sigmoid function."""
-    return sigmoid(n)*(1-sigmoid(n))
+    return sigmoid(n) * (1 - sigmoid(n))
 
 
-def feedForward(net: Network) -> Network:
-    # resetting the activations as to not take any info from the activation of the previous number while maintanin the first activation
-    for i in range(1, net.nLayers):
-        net.z[i] = np.zeros(net.layers[i])
-        net.a[i] = np.zeros(net.layers[i])
-    for l in range(0, net.nLayers - 1):
-        for receivingNeuron in range(net.layers[l + 1]):
-            for givingNeuron in range(net.layers[l]):
-                net.z[l + 1][receivingNeuron] += net.a[l][givingNeuron] * net.w[l][givingNeuron][receivingNeuron]
-            net.z[l + 1][receivingNeuron] += net.b[l][receivingNeuron]
-            net.a[l + 1][receivingNeuron] = sigmoid(net.z[l + 1][receivingNeuron])
+def tanh(n: float):
+    return np.tanh(n)
 
-    return net
+def padding(X):
+    maxLen = len(max(X, key=len))
+    for i in range(len(X)):
+        X[i] = np.pad(X[i], (0 ,maxLen - len(X[i])), 'constant', constant_values=(0, 0))
+    return X
 
-
-def setInput(net: Network, MNISTnumber):
-    numberArr = np.asarray(MNISTnumber).flatten()
-    # scaling the array so that the range is between 0 and 1
-    numberArr = np.interp(numberArr, (numberArr.min(), numberArr.max()), (0, 1))
-    for i in range(net.layers[0]):
-        net.z[0][i] = numberArr[i]
-        net.a[0][i] = numberArr[i]
-    net = feedForward(net)
-
-    return net
+maxLen = 500
+train_X = np.load('train_X.npy', allow_pickle=True)
+train_y = np.load('train_y.npy', allow_pickle=True)
 
 
-def backProp(net: Network, y) -> Network:
-    layers = net.layers
-    nablaB = [np.zeros(i.shape) for i in net.b]
-    nablaW = [np.zeros(i.shape) for i in net.w]
-    delta = np.zeros(10)  # 10 because its the possible number of outputs
-    for j in range(net.layers[-1]):
-        if y == j:
-            delta[j] += (net.a[-1][j] - 1) * sigmoid_derivative(net.z[-1][j])
-        else:
-            delta[j] += (net.a[-1][j] - 0) * sigmoid_derivative(net.z[-1][j])
-    for l in range(net.nLayers - 1, 0, -1):
-        #nablaB and nablaW have -1 because they only have 2 layers instead of 3
-        nablaB[l - 1] = delta
+def testNetwork(net, test_X, test_y, nTests: int):
+    """
+    A function to test our network
 
-        # not too sure about nablaW
-        for j in range(layers[l]):
-            for k in range(layers[l - 1]):
-                nablaW[l - 1][k][j] += net.a[l - 1][k] * delta[j]
+    It returns the overall accuracy and the numbers our network guessed
+    """
 
-        # finding the error one layer behind
-        # in the book it needs a transpose because its weight[layer][receivingNeuron][givingNeuron]
-        # but my implementation uses weight[layer][givingNeuron][receivingNeuron] so it's not necessary
-        delta = (np.dot(net.w[l - 1], delta)) * sigmoid_derivative(net.z[l - 1])
-
-    return nablaB, nablaW
-
-
-def SGD(net: Network, X: list, y: list, batchSize: int, nEpochs: int, learningRate) -> Network:
-    for epoch in range(nEpochs):
-        # print(epoch)
-        batch = rd.sample(range(len(X)), batchSize)
-        nablaB = [np.zeros(i.shape) for i in net.b]
-        nablaW = [np.zeros(i.shape) for i in net.w]
-        for i in batch:
-            net = setInput(net, X[i])
-            deltaNablaB, deltaNablaW = backProp(net, y[i])
-            for l in range(net.nLayers-1):
-                nablaB[l] += deltaNablaB[l]
-                nablaW[l] += deltaNablaW[l]
-        for l in range(net.nLayers - 1):
-            net.b[l] = net.b[l] - learningRate * (nablaB[l] / batchSize)
-            net.w[l] = net.w[l] - learningRate * (nablaW[l] / batchSize)
-
-    return net
-
-
-def testNetwork(net: Network, test_X, test_y, batchSize: int):
     correctOutput = 0
-    X = test_X[:batchSize]
-    y = test_y[:batchSize]
+    X = test_X[:nTests]
+    y = test_y[:nTests]
     outputs = np.zeros(10)
-    for i in range(batchSize):
-        net = setInput(net, X[i])
+    for i in range(nTests):
+        net.setInput(X[i])
         networkOutput = np.argmax(net.a[-1])
         outputs[networkOutput] += 1
-        #print(f"number: {y[i]}, networkOutput: {networkOutput}, activations: {net.a[-1]}")
+        # print(f"number: {y[i]}, networkOutput: {networkOutput}, activations: {net.a[-1]}")
         if y[i] == networkOutput:
             correctOutput += 1
-    acc = correctOutput/batchSize
+    acc = correctOutput / nTests
     return acc, outputs
 
-def gridSearch(net: Network, train_X, train_y, test_X, test_y, batchSize: int, learningRates: list, epochs: list):
-    for eta in learningRates:
-        for epoch in epochs:
-            # resetting the network
-            net = Network([784,30,10])
-            net = SGD(net, train_X, train_y, batchSize=batchSize, nEpochs=epoch, learningRate=eta)
-            acc, outputs = testNetwork(net, test_X, test_y, batchSize=batchSize)
-            print(f'learningRate: {eta} epochs: {epoch} acc: {acc}, outputs: {outputs}')
 
+class LSTM:
+    """
+    h = array of outputs
+    x = array of inputs
+    """
 
-net = Network([784,30,10])
-train_X = mnist.train_images()
-train_y = mnist.train_labels()
-test_X = mnist.test_images()
-test_y = mnist.test_labels()
+    def __init__(self, nInputs, nFeatures, nCells, nOutputs, batchSize):
+        nGates = 4
+        if nCells < nOutputs:
+            print('the number of cells cannot be less than the number of outputs')
 
-gridSearch(net, train_X, train_y, test_X, test_y, batchSize=100, learningRates=[0.1,1,10,100], epochs=[10,20,50])
+        # [t][i][j], t = timestep, i = which batch, j = which cell or feature
+        x = np.zeros((nInputs, batchSize, nFeatures))
+        h = np.zeros((nInputs, batchSize, nCells))
+        i = np.zeros((nInputs, batchSize, nCells))
+        f = np.zeros((nInputs, batchSize, nCells))
+        o = np.zeros((nInputs, batchSize, nCells))
+        tildeC = np.zeros((nInputs, batchSize, nCells))
+        C = np.zeros((nInputs, batchSize, nCells))
+        wxScale = 1 / np.sqrt(nFeatures * nCells)
+        whScale = 1 / np.sqrt(nCells * nCells)
+        Wxi = np.random.normal(loc=0, scale=wxScale, size=[nFeatures, nCells])
+        Wxf = np.random.normal(loc=0, scale=wxScale, size=[nFeatures, nCells])
+        Wxc = np.random.normal(loc=0, scale=wxScale, size=[nFeatures, nCells])
+        Wxo = np.random.normal(loc=0, scale=wxScale, size=[nFeatures, nCells])
+        Whi = np.random.normal(loc=0, scale=wxScale, size=[nCells, nCells])
+        Whf = np.random.normal(loc=0, scale=wxScale, size=[nCells, nCells])
+        Whc = np.random.normal(loc=0, scale=wxScale, size=[nCells, nCells])
+        Who = np.random.normal(loc=0, scale=wxScale, size=[nCells, nCells])
+        bi = np.random.normal(loc=0, scale=1, size=[nCells])
+        bf = np.random.normal(loc=0, scale=1, size=[nCells])
+        bc = np.random.normal(loc=0, scale=1, size=[nCells])
+        bo = np.random.normal(loc=0, scale=1, size=[nCells])
+        self.x = x
+        self.h = h
+        self.i = i
+        self.f = f
+        self.o = o
+        self.tildeC = tildeC
+        self.C = C
+        self.Wxi = Wxi
+        self.Wxf = Wxf
+        self.Wxc = Wxc
+        self.Wxo = Wxo
+        self.Whi = Whi
+        self.Whf = Whf
+        self.Whc = Whc
+        self.Who = Who
+        self.bi = bi
+        self.bf = bf
+        self.bc = bc
+        self.bo = bo
+        self.nCells = nCells
+        self.nGates = nGates
+        self.nInputs = nInputs
+
+    # the np.array(a) and np.array(b) can be removed after batchSize is implemented
+
+    def forgetGate(self, t):
+        if t == 0:
+            self.f[t] = sigmoid(np.dot(self.x[t], self.Wxf) + self.bf)
+        else:
+            self.f[t] = sigmoid(np.dot(self.h[t - 1], self.Whf) + np.dot(self.x[t], self.Wxf) + self.bf)
+        return self.f[t]
+
+    def inputGate(self, t):
+        if t == 0:
+            self.i[t] = sigmoid(np.dot(self.x[t], self.Wxi) + self.bi)
+            self.tildeC[t] = tanh(np.dot(self.x[t], self.Wxc) + self.bc)
+        else:
+            self.i[t] = sigmoid(np.dot(self.h[t - 1], self.Whi) + np.dot(self.x[t], self.Wxi) + self.bi)
+            self.tildeC[t] = tanh(np.dot(self.h[t - 1], self.Whc) + np.dot(self.x[t], self.Wxc) + self.bc)
+        return self.i[t] * self.tildeC[t]
+
+    def outputGate(self, t, newC):
+        if t == 0:
+            self.o[t] = sigmoid(np.dot(self.x[t], self.Wxo) + self.bo)
+        else:
+            self.o[t] = sigmoid(np.dot(self.h[t - 1], self.Who) + np.dot(self.x[t], self.Wxo) + self.bo)
+        self.h[t] = self.o[t] * tanh(newC)
+        return self.h[t]
+
+    def getNewState(self, t, xElement):
+        newC = self.C[t - 1] * self.forgetGate(t)
+        newC = newC + self.inputGate(t)
+        newH = self.outputGate(t, newC)
+        return newC, newH
+
+    def setInput(self, x):
+        C = 0
+        self.x[0] = x[0]
+        self.C[0], self.h[0] = self.getNewState(0, x[0])
+        for t in range(1, self.nCells):
+            self.x[t] = x[t]
+            self.C[t], self.h[t] = self.getNewState(t, x[t])
+        return
+
+    def backProp(self, y):
+        deltaOut = 0
+        # a = C~, state = C
+        i = self.i
+        f = self.f
+        C = self.C
+        o = self.o
+        deltaGates = np.zeros([self.nCells, self.nGates])
+        deltaState = 0
+        for t in range(self.nCells, 0, -1):
+            delta = self.h[t] - y[t]
+            deltaOut = delta + deltaOut
+            deltaState = deltaOut * o[t] * (1 - tanh(C[t]) ** 2) + deltaState[t + 1] * f[t + 1]
+            deltaC = deltaState[t] * i[t] * (1 - C[t] ** 2)
+            deltaI = deltaState[t] * C[t] * i[t] * (1 - i[t])
+            deltaF = deltaState[t] * C[t - 1] * f[t] * (1 - f[t])
+            deltaO = deltaOut[t] * tanh(C[t]) * o[t] * (1 - o[t])
+            deltaGates[t] = np.array([deltaC[t], deltaI[t], deltaF[t], deltaO[t]])
+
+        deltaW = 0
+        deltaU = 0
+        deltaB = 0
+        for t in range(self.nInputs):
+            deltaW += np.outer(deltaGates[t], self.x[t])
+            deltaB += deltaGates[t]
+            deltaU += np.outer(deltaGates[t + 1], self.h[t])
+        return deltaW, deltaU, deltaB
+
+    def SGD(self, X: list, y: list, batchSize: int, nEpochs: int, learningRate, lamb):
+        """
+        Implementation of Stochastic Gradient Descent
+
+        It takes as input the network, the MNIST dataset, the MNIST labels of the dataset,
+        the size of the batch to do gradient descent, the number of epochs it should run,
+        the learning rate eta (I found the best eta to be in the order of 1s)
+        and the regularization term lambda
+
+        It returns a trained network
+        """
+        bestAcc = 0
+        bestEpoch = 0
+        eta = learningRate
+        etaChangeEpoch = 0
+        for epoch in range(nEpochs):
+            batch = rd.sample(range(len(X)), batchSize)
+            nablaW = np.zeros(self.nGates)
+            nablaU = np.zeros(self.nGates)
+            nablaB = np.zeros(self.nGates)
+            for i in batch:
+                self.setInput(X[i])
+                # finding what should be modified based on this particular example
+                deltaNablaW, deltaNablaU, deltaNablaB = LSTM.backProp(y[i])
+                # passing this modifications to our overall modifications matrices
+                nablaW += deltaNablaW
+                nablaU += deltaNablaU
+                nablaB += deltaNablaB
+
+            # applying the changes to our network
+            self.b = self.b - eta * (nablaB / batchSize)
+            self.w = self.w - eta * (nablaW / batchSize) - eta * (lamb / batchSize) * self.w
+            self.u = self.u - eta * (nablaU / batchSize) - eta * (lamb / batchSize) * self.u
+            acc, outputs = testNetwork(X, y, nTests=batchSize)
+            if acc > bestAcc:
+                bestAcc = acc
+                bestEpoch = epoch
+            print(f'learningRate: {learningRate} epochs: {epoch} acc: {acc}, outputs: {outputs}')
+        print(f'best acc: {bestAcc} on epoch: {bestEpoch}')
+
+lstm = LSTM(nInputs=500, nFeatures=1, nCells=500, nOutputs=1, batchSize=1)
+lstm.SGD(train_X, train_y, batchSize=100, nEpochs=100, learningRate = 1, lamb = 0)
