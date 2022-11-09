@@ -85,6 +85,7 @@ class LSTM:
         self.nGates = nGates
         self.nInputs = nInputs
         self.batchSize = batchSize
+        self.nFeatures = nFeatures
 
     # the np.array(a) and np.array(b) can be removed after batchSize is implemented
 
@@ -112,7 +113,7 @@ class LSTM:
         self.h[t] = self.o[t] * tanh(newC)
         return self.h[t]
 
-    def getNewState(self, t, xElement):
+    def getNewState(self, t):
         newC = self.C[t - 1] * self.forgetGate(t)
         newC = newC + self.inputGate(t)
         newH = self.outputGate(t, newC)
@@ -121,10 +122,10 @@ class LSTM:
     def setInput(self, x):
         C = 0
         self.x[0] = x[0]
-        self.C[0], self.h[0] = self.getNewState(0, x[0])
-        for t in range(1, self.nUnits):
+        self.C[0], self.h[0] = self.getNewState(0)
+        for t in range(1, self.nInputs):
             self.x[t] = x[t]
-            self.C[t], self.h[t] = self.getNewState(t, x[t])
+            self.C[t], self.h[t] = self.getNewState(t)
         return
 
     def testNetwork(self, test_X, test_y, nTests: int):
@@ -154,13 +155,12 @@ class LSTM:
         C = self.C
         tildeC = self.tildeC
         o = self.o
-        delta = self.h[-1] - y
         Wx = self.Wx
         Wh = self.Wh
 
 
         deltaH = np.zeros_like(self.h)
-        triangle = np.zeros(self.nInputs)
+        triangle = np.zeros((self.nInputs, self.batchSize, self.nUnits))
         triangleH = np.zeros_like(self.h)
         deltaC = np.zeros_like(C)
         deltaTildeC = np.zeros_like(tildeC)
@@ -177,28 +177,31 @@ class LSTM:
         deltaGates = np.append(deltaGates, np.zeros((1, self.nGates, np.shape(self.C[0])[0], np.shape(self.C[0])[1])), axis=0)
         for t in range(self.nInputs - 1, 0, -1):
             # not too sure about delta because I only have 1 output
-            #delta = self.h[t] - y[t]
             triangle[t] = self.h[t] - y
             # I need the dot product to have dimensions batchsize, 1
-            triangleH[t] = np.dot(np.transpose(Wh), deltaGates[t + 1])
+            # not sure if its working, have to see after t is bigger than 0
+            for j in range(self.batchSize):
+                triangleH[t, j] = np.dot(np.transpose(Wh), deltaGates[t + 1,:,j])
             deltaH[t] = triangle[t] + triangleH[t]
             deltaC[t] = deltaH[t] * o[t] * (1 - pow(tanh(C[t]), 2)) + deltaC[t + 1] * f[t + 1]
             deltaTildeC[t] = deltaC[t] * i[t] * (1 - pow(tildeC[t], 2))
             deltaI[t] = deltaC[t] * tildeC[t] * i[t] * (1 - i[t])
             deltaF[t] = deltaC[t] * C[t - 1] * f[t] * (1 - f[t])
             deltaO[t] = deltaH[t] * tanh(C[t]) * o[t] * (1 - o[t])
-            deltaX[t] = np.dot(np.transpose(Wx), deltaGates[t + 1])
-            triangleH[t - 1] = np.dot(np.transpose(Wh), deltaGates[t + 1])
+            for j in range(self.batchSize):
+                deltaX[t, j] = np.dot(np.transpose(Wx), deltaGates[t + 1, :, j])
+                triangleH[t - 1, j] = np.dot(np.transpose(Wh), deltaGates[t + 1, :, j])
         deltaWx = np.zeros_like(self.Wx)
         deltaWh = np.zeros_like(self.Wh)
         deltaB = np.zeros_like(self.b)
         for t in range(self.nInputs):
-            deltaWx += np.outer(deltaGates[t], self.x[t])
-            deltaWh += np.outer(deltaGates[t + 1], self.h[t])
-            deltaB += deltaGates[t + 1]
+            for j in range(self.batchSize):
+                deltaWx += np.outer(deltaGates[t, :, j], self.x[t])
+                deltaWh += np.outer(deltaGates[t + 1, :, j], self.h[t])
+                deltaB += deltaGates[t + 1, :, j]
         return deltaWx, deltaWh, deltaB
 
-    def SGD(self, X: list, y: list, batchSize: int, nEpochs: int, learningRate, lamb):
+    def SGD(self, X: list, y: list, SGDbatchSize: int, nEpochs: int, learningRate, lamb):
         """
         Implementation of Stochastic Gradient Descent
 
@@ -214,29 +217,36 @@ class LSTM:
         eta = learningRate
         etaChangeEpoch = 0
         for epoch in range(nEpochs):
-            batch = rd.sample(range(len(X)), batchSize)
+            rd.shuffle(X)
             nablaWx = np.zeros_like(self.Wx)
             nablaWh = np.zeros_like(self.Wh)
             nablaB = np.zeros_like(self.b)
-            for i in batch:
-                self.setInput(X[i])
+            for i in range(0, SGDbatchSize, self.batchSize):
+                # shaping the input to have the same dimensions as x[t] and h[t]
+                batchX = np.zeros((self.nInputs, self.batchSize, self.nFeatures))
+                for j in range(self.batchSize):
+                    batchX[:,j] = np.reshape(X[i+j], (-1, self.nFeatures))
+                batchY = np.reshape(y[i:i + self.batchSize], (-1, self.nUnits))
+                self.setInput(batchX)
+
+
                 # finding what should be modified based on this particular example
-                deltaNablaWx, deltaNablaWh, deltaNablaB = self.backProp(y[i])
+                deltaNablaWx, deltaNablaWh, deltaNablaB = self.backProp(batchY)
                 # passing this modifications to our overall modifications matrices
                 nablaWx += deltaNablaWx
                 nablaWh += deltaNablaWh
                 nablaB += deltaNablaB
 
             # applying the changes to our network
-            self.b = self.b - eta * (nablaB / batchSize)
-            self.Wx = self.Wx - eta * (nablaWx / batchSize) - eta * (lamb / batchSize) * self.Wx
-            self.Wh = self.Wh - eta * (nablaWh / batchSize) - eta * (lamb / batchSize) * self.Wh
-            acc, outputs = self.testNetwork(X, y, nTests=batchSize)
+            self.b = self.b - eta * (nablaB / SGDbatchSize)
+            self.Wx = self.Wx - eta * (nablaWx / SGDbatchSize) - eta * (lamb / SGDbatchSize) * self.Wx
+            self.Wh = self.Wh - eta * (nablaWh / SGDbatchSize) - eta * (lamb / SGDbatchSize) * self.Wh
+            acc, outputs = self.testNetwork(X, y, nTests=SGDbatchSize)
             if acc > bestAcc:
                 bestAcc = acc
                 bestEpoch = epoch
             print(f'learningRate: {learningRate} epochs: {epoch} acc: {acc}, outputs: {outputs}')
         print(f'best acc: {bestAcc} on epoch: {bestEpoch}')
 
-lstm = LSTM(nInputs=500, nFeatures=1, nUnits=1, nOutputs=1, batchSize=1)
-lstm.SGD(train_X, train_y, batchSize=100, nEpochs=100, learningRate = 1, lamb = 0)
+lstm = LSTM(nInputs=500, nFeatures=1, nUnits=1, nOutputs=1, batchSize=10)
+lstm.SGD(train_X, train_y, SGDbatchSize=100, nEpochs=100, learningRate = 1, lamb = 0)
