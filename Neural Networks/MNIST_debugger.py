@@ -183,9 +183,11 @@ class LSTM:
         deltaC = np.append(deltaC, np.zeros((1,self.batchSize, self.nUnits)), axis=0)
         f      = np.append(f, np.zeros((1,self.batchSize, self.nUnits)), axis=0)
         deltaGates = np.append(deltaGates, np.zeros((1, self.nGates, np.shape(self.C[0])[0], np.shape(self.C[0])[1])), axis=0)
+
+        # not too sure about delta because I only have 1 output
+        triangle[-1] = self.h[-1] - y
         for t in range(self.nInputs - 1, 0, -1):
-            # not too sure about delta because I only have 1 output
-            triangle[t] = self.h[t] - y
+
             # I need the dot product to have dimensions batchsize, 1
             # not sure if its working, have to see after t is bigger than 0
             for j in range(self.batchSize):
@@ -236,9 +238,9 @@ class LSTM:
                 for j in range(self.batchSize):
                     batchX[:, j] = np.reshape(X[i+j], (-1, self.nFeatures))
                 batchY = np.reshape(y[i:i + self.batchSize], (-1, self.nUnits))
+
+
                 self.setInput(batchX)
-
-
                 # finding what should be modified based on this particular example
                 deltaNablaWx, deltaNablaWh, deltaNablaB = self.backProp(batchY)
                 # passing this modifications to our overall modifications matrices
@@ -257,5 +259,7 @@ class LSTM:
             print(f'learningRate: {learningRate} epochs: {epoch} acc: {acc}, outputs: {outputs}')
         print(f'best acc: {bestAcc} on epoch: {bestEpoch}')
 
-lstm = LSTM(nInputs=500, nFeatures=1, nUnits=1, nOutputs=1, batchSize=10)
-lstm.SGD(train_X, train_y, SGDbatchSize=100, nEpochs=100, learningRate = 1, lamb = 0)
+lstm = LSTM(nInputs=80, nFeatures=1, nUnits=1, nOutputs=1, batchSize=20)
+etas = [0.001,0.01,0.1,1,10,100,1000,10000]
+for l in etas:
+    lstm.SGD(train_X, train_y, SGDbatchSize=100, nEpochs=100, learningRate =l, lamb = 0)
