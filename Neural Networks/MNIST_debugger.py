@@ -138,14 +138,22 @@ class LSTM:
         correctOutput = 0
         X = test_X[:nTests]
         y = test_y[:nTests]
-        outputs = np.zeros(10)
-        for i in range(nTests):
-            self.setInput(X[i])
-            networkOutput = self.h[-1]
-            outputs[networkOutput] += 1
+        outputs = np.zeros(2)
+
+        for i in range(0, nTests, self.batchSize):
+            # shaping the input to have the same dimensions as x[t] and h[t]
+            batchX = np.zeros((self.nInputs, self.batchSize, self.nFeatures))
+            for j in range(self.batchSize):
+                batchX[:, j] = np.reshape(X[i + j], (-1, self.nFeatures))
+            batchY = np.reshape(y[i:i + self.batchSize], (-1, self.nUnits))
+            self.setInput(batchX)
+            networkOutputs = np.where(self.h[-1] < 0.5, 0, 1)
+            for out in networkOutputs:
+                outputs[out] += 1
             # print(f"number: {y[i]}, networkOutput: {networkOutput}, activations: {net.a[-1]}")
-            if y[i] == networkOutput:
-                correctOutput += 1
+            for j in range(self.batchSize):
+                if batchY[j] == networkOutputs[j]:
+                    correctOutput += 1
         acc = correctOutput / nTests
         return acc, outputs
 
@@ -196,8 +204,9 @@ class LSTM:
         deltaB = np.zeros_like(self.b)
         for t in range(self.nInputs):
             for j in range(self.batchSize):
-                deltaWx += np.outer(deltaGates[t, :, j], self.x[t])
-                deltaWh += np.outer(deltaGates[t + 1, :, j], self.h[t])
+                for k in range(self.nUnits):
+                    deltaWx[:, :, k] += np.outer(deltaGates[t, :, j, k], self.x[t, j])
+                    deltaWh[:, :, k] += np.outer(deltaGates[t + 1, :, j, k], self.h[t, j])
                 deltaB += deltaGates[t + 1, :, j]
         return deltaWx, deltaWh, deltaB
 
@@ -225,7 +234,7 @@ class LSTM:
                 # shaping the input to have the same dimensions as x[t] and h[t]
                 batchX = np.zeros((self.nInputs, self.batchSize, self.nFeatures))
                 for j in range(self.batchSize):
-                    batchX[:,j] = np.reshape(X[i+j], (-1, self.nFeatures))
+                    batchX[:, j] = np.reshape(X[i+j], (-1, self.nFeatures))
                 batchY = np.reshape(y[i:i + self.batchSize], (-1, self.nUnits))
                 self.setInput(batchX)
 
