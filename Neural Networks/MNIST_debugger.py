@@ -23,6 +23,8 @@ def padding(X):
 maxLen = 500
 train_X = np.load('train_X.npy', allow_pickle=True)
 train_y = np.load('train_y.npy', allow_pickle=True)
+np.random.seed(42)
+rd.seed(42)
 
 
 
@@ -74,12 +76,32 @@ class LSTM:
         self.Whf = Whf
         self.Whc = Whc
         self.Who = Who
+
+
+        #remove this
+        self.Wxc = np.array([0.45, 0.25])
+        self.Wxi = np.array([0.95, 0.8])
+        self.Wxf = np.array([0.7, 0.45])
+        self.Wxo = np.array([0.6, 0.4])
+        self.Whi = np.array([0.8])
+        self.Whf = np.array([0.1])
+        self.Who = np.array([0.25])
+        self.Whc = np.array([0.15])
+
+
         self.Wx = np.array([self.Wxc, self.Wxi, self.Wxf, self.Wxo])
         self.Wh = np.array([self.Whc, self.Whi, self.Whf, self.Who])
+
         self.bi = bi
         self.bf = bf
         self.bc = bc
         self.bo = bo
+
+        #remove this
+        self.bc = np.array([0.2])
+        self.bi = np.array([0.65])
+        self.bf = np.array([0.15])
+        self.bo = np.array([0.1])
         self.b = np.array([self.bc, self.bi, self.bf, self.bo])
         self.nUnits = nUnits
         self.nGates = nGates
@@ -87,7 +109,7 @@ class LSTM:
         self.batchSize = batchSize
         self.nFeatures = nFeatures
 
-    # the np.array(a) and np.array(b) can be removed after batchSize is implemented
+
 
     def forgetGate(self, t):
         if t == 0:
@@ -105,27 +127,27 @@ class LSTM:
             self.tildeC[t] = tanh(np.dot(self.h[t - 1], self.Whc) + np.dot(self.x[t], self.Wxc) + self.bc)
         return self.i[t] * self.tildeC[t]
 
-    def outputGate(self, t, newC):
+    def outputGate(self, t):
         if t == 0:
             self.o[t] = sigmoid(np.dot(self.x[t], self.Wxo) + self.bo)
         else:
             self.o[t] = sigmoid(np.dot(self.h[t - 1], self.Who) + np.dot(self.x[t], self.Wxo) + self.bo)
-        self.h[t] = self.o[t] * tanh(newC)
+        self.h[t] = self.o[t] * tanh(self.C[t])
         return self.h[t]
 
     def getNewState(self, t):
-        newC = self.C[t - 1] * self.forgetGate(t)
-        newC = newC + self.inputGate(t)
-        newH = self.outputGate(t, newC)
-        return newC, newH
+        self.forgetGate(t)
+        self.inputGate(t)
+        self.C[t] = self.C[t - 1] * self.f[t] + self.i[t] * self.tildeC[t]
+        self.h[t] = self.outputGate(t)
+        return self.C[t], self.h[t]
 
     def setInput(self, x):
-        C = 0
         self.x[0] = x[0]
-        self.C[0], self.h[0] = self.getNewState(0)
+        self.getNewState(0)
         for t in range(1, self.nInputs):
             self.x[t] = x[t]
-            self.C[t], self.h[t] = self.getNewState(t)
+            self.getNewState(t)
         return
 
     def testNetwork(self, test_X, test_y, nTests: int):
@@ -135,11 +157,10 @@ class LSTM:
         It returns the overall accuracy and the numbers our network guessed
         """
 
-        correctOutput = 0
         X = test_X[:nTests]
         y = test_y[:nTests]
         outputs = np.zeros(2)
-
+        mse = 0
         for i in range(0, nTests, self.batchSize):
             # shaping the input to have the same dimensions as x[t] and h[t]
             batchX = np.zeros((self.nInputs, self.batchSize, self.nFeatures))
@@ -152,10 +173,9 @@ class LSTM:
                 outputs[out] += 1
             # print(f"number: {y[i]}, networkOutput: {networkOutput}, activations: {net.a[-1]}")
             for j in range(self.batchSize):
-                if batchY[j] == networkOutputs[j]:
-                    correctOutput += 1
-        acc = correctOutput / nTests
-        return acc, outputs
+                mse += pow((batchY[j] - networkOutputs[j]), 2)
+        mse = mse/self.batchSize
+        return mse, outputs
 
     def backProp(self, y):
         i = self.i
@@ -185,22 +205,22 @@ class LSTM:
         deltaGates = np.append(deltaGates, np.zeros((1, self.nGates, np.shape(self.C[0])[0], np.shape(self.C[0])[1])), axis=0)
 
         # not too sure about delta because I only have 1 output
-        triangle[-1] = self.h[-1] - y
         for t in range(self.nInputs - 1, 0, -1):
-
             # I need the dot product to have dimensions batchsize, 1
             # not sure if its working, have to see after t is bigger than 0
-            for j in range(self.batchSize):
-                triangleH[t, j] = np.dot(np.transpose(Wh), deltaGates[t + 1,:,j])
+            triangle[t] = self.h[t] - y[t]
+            """for j in range(self.batchSize):
+                triangleH[t, j] = np.dot(np.transpose(Wh), deltaGates[t + 1,:,j])"""
             deltaH[t] = triangle[t] + triangleH[t]
             deltaC[t] = deltaH[t] * o[t] * (1 - pow(tanh(C[t]), 2)) + deltaC[t + 1] * f[t + 1]
             deltaTildeC[t] = deltaC[t] * i[t] * (1 - pow(tildeC[t], 2))
             deltaI[t] = deltaC[t] * tildeC[t] * i[t] * (1 - i[t])
             deltaF[t] = deltaC[t] * C[t - 1] * f[t] * (1 - f[t])
             deltaO[t] = deltaH[t] * tanh(C[t]) * o[t] * (1 - o[t])
+            deltaGates[t] = np.array([deltaTildeC[t], deltaI[t], deltaF[t], deltaO[t]])
             for j in range(self.batchSize):
-                deltaX[t, j] = np.dot(np.transpose(Wx), deltaGates[t + 1, :, j])
-                triangleH[t - 1, j] = np.dot(np.transpose(Wh), deltaGates[t + 1, :, j])
+                deltaX[t, j] = np.dot(np.transpose(Wx), deltaGates[t, :, j])
+                triangleH[t - 1, j] = np.dot(np.transpose(Wh), deltaGates[t, :, j])
         deltaWx = np.zeros_like(self.Wx)
         deltaWh = np.zeros_like(self.Wh)
         deltaB = np.zeros_like(self.b)
@@ -223,26 +243,30 @@ class LSTM:
 
         It returns a trained network
         """
-        bestAcc = 0
+        bestMse = 0
         bestEpoch = 0
         eta = learningRate
         etaChangeEpoch = 0
         for epoch in range(nEpochs):
-            rd.shuffle(X)
+            #batch = rd.sample(np.shape(X)[0], SGDbatchSize)
             nablaWx = np.zeros_like(self.Wx)
             nablaWh = np.zeros_like(self.Wh)
             nablaB = np.zeros_like(self.b)
             for i in range(0, SGDbatchSize, self.batchSize):
                 # shaping the input to have the same dimensions as x[t] and h[t]
-                batchX = np.zeros((self.nInputs, self.batchSize, self.nFeatures))
+                """batchX = np.zeros((self.nInputs, self.batchSize, self.nFeatures))
                 for j in range(self.batchSize):
-                    batchX[:, j] = np.reshape(X[i+j], (-1, self.nFeatures))
-                batchY = np.reshape(y[i:i + self.batchSize], (-1, self.nUnits))
+                    batchX[:, j] = np.reshape(X[batch[i]], (-1, self.nFeatures))
+                for j in range(self.nInputs):
+                    batchX[i+j] = X[batch[i]]"""
+
+                # shaping the output to have the same dimensions as h[t]
+                #batchY = np.reshape(y[i:i + self.batchSize], (-1, self.nUnits))
 
 
-                self.setInput(batchX)
+                self.setInput(X)
                 # finding what should be modified based on this particular example
-                deltaNablaWx, deltaNablaWh, deltaNablaB = self.backProp(batchY)
+                deltaNablaWx, deltaNablaWh, deltaNablaB = self.backProp(y)
                 # passing this modifications to our overall modifications matrices
                 nablaWx += deltaNablaWx
                 nablaWh += deltaNablaWh
@@ -252,14 +276,19 @@ class LSTM:
             self.b = self.b - eta * (nablaB / SGDbatchSize)
             self.Wx = self.Wx - eta * (nablaWx / SGDbatchSize) - eta * (lamb / SGDbatchSize) * self.Wx
             self.Wh = self.Wh - eta * (nablaWh / SGDbatchSize) - eta * (lamb / SGDbatchSize) * self.Wh
-            acc, outputs = self.testNetwork(X, y, nTests=SGDbatchSize)
-            if acc > bestAcc:
-                bestAcc = acc
+            mse, outputs = self.testNetwork(X, y, nTests=SGDbatchSize)
+            if mse > bestMse:
+                bestMse = mse
                 bestEpoch = epoch
-            print(f'learningRate: {learningRate} epochs: {epoch} acc: {acc}, outputs: {outputs}')
-        print(f'best acc: {bestAcc} on epoch: {bestEpoch}')
+            if epoch%100 == 0:
+                print(f'learningRate: {learningRate} epochs: {epoch} mse: {mse}, outputs: {outputs}')
+        print(f'best acc: {bestMse} on epoch: {bestEpoch}')
 
-lstm = LSTM(nInputs=80, nFeatures=1, nUnits=1, nOutputs=1, batchSize=20)
-etas = [0.001,0.01,0.1,1,10,100,1000,10000]
+
+etas = [0.01, 0.1, 1, 10]
 for l in etas:
-    lstm.SGD(train_X, train_y, SGDbatchSize=100, nEpochs=100, learningRate =l, lamb = 0)
+    print(f"learnign rate: {l}")
+    train_X = np.array(([1, 2], [0.5, 3]))
+    train_y = np.array((0.5,1))
+    lstm = LSTM(nInputs=2, nFeatures=2, nUnits=1, nOutputs=1, batchSize=1)
+    lstm.SGD(train_X, train_y, SGDbatchSize=1, nEpochs=200, learningRate=l, lamb=0)
