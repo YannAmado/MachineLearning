@@ -202,10 +202,12 @@ class LSTM:
         # deltaState and f have t + 1
         deltaC = np.append(deltaC, np.zeros((1,self.batchSize, self.nUnits)), axis=0)
         f      = np.append(f, np.zeros((1,self.batchSize, self.nUnits)), axis=0)
-        deltaGates = np.append(deltaGates, np.zeros((1, self.nGates, np.shape(self.C[0])[0], np.shape(self.C[0])[1])), axis=0)
+
+        # C has t - 1 in deltaF
+        C = np.append(C, np.zeros((1,self.batchSize, self.nUnits)), axis=0)
 
         # not too sure about delta because I only have 1 output
-        for t in range(self.nInputs - 1, 0, -1):
+        for t in range(self.nInputs - 1, -1, -1):
             # I need the dot product to have dimensions batchsize, 1
             # not sure if its working, have to see after t is bigger than 0
             triangle[t] = self.h[t] - y[t]
@@ -219,17 +221,22 @@ class LSTM:
             deltaO[t] = deltaH[t] * tanh(C[t]) * o[t] * (1 - o[t])
             deltaGates[t] = np.array([deltaTildeC[t], deltaI[t], deltaF[t], deltaO[t]])
             for j in range(self.batchSize):
-                deltaX[t, j] = np.dot(np.transpose(Wx), deltaGates[t, :, j])
-                triangleH[t - 1, j] = np.dot(np.transpose(Wh), deltaGates[t, :, j])
+                deltaX[t, j] = np.dot(np.transpose(Wx), deltaGates[t, :, j])[:, 0]
+                # even though eventually it will calculate triangleH[-1], it will not be used
+                triangleH[t - 1, j] = np.dot(np.transpose(Wh), deltaGates[t, :, j])[:, 0]
         deltaWx = np.zeros_like(self.Wx)
         deltaWh = np.zeros_like(self.Wh)
         deltaB = np.zeros_like(self.b)
         for t in range(self.nInputs):
             for j in range(self.batchSize):
                 for k in range(self.nUnits):
-                    deltaWx[:, :, k] += np.outer(deltaGates[t, :, j, k], self.x[t, j])
-                    deltaWh[:, :, k] += np.outer(deltaGates[t + 1, :, j, k], self.h[t, j])
-                deltaB += deltaGates[t + 1, :, j]
+                    deltaWx += np.outer(deltaGates[t, :, j, k], self.x[t, j])
+                    if t < self.nInputs - 1: # deltaWh is until T - 1
+                        deltaWh += np.outer(deltaGates[t + 1, :, j, k], self.h[t, j])
+                    #deltaWx[:, :, k] += np.outer(deltaGates[t, :, j, k], self.x[t, j])
+                    #deltaWh[:, :, k] += np.outer(deltaGates[t + 1, :, j, k], self.h[t, j])
+                # deltaB is from zero to T, different from many posts
+                deltaB += deltaGates[t, :, j]
         return deltaWx, deltaWh, deltaB
 
     def SGD(self, X: list, y: list, SGDbatchSize: int, nEpochs: int, learningRate, lamb):
@@ -285,10 +292,10 @@ class LSTM:
         print(f'best acc: {bestMse} on epoch: {bestEpoch}')
 
 
-etas = [0.01, 0.1, 1, 10]
+etas = [0.1, 1, 10]
 for l in etas:
     print(f"learnign rate: {l}")
     train_X = np.array(([1, 2], [0.5, 3]))
-    train_y = np.array((0.5,1))
+    train_y = np.array((0.5,1.25))
     lstm = LSTM(nInputs=2, nFeatures=2, nUnits=1, nOutputs=1, batchSize=1)
     lstm.SGD(train_X, train_y, SGDbatchSize=1, nEpochs=200, learningRate=l, lamb=0)
