@@ -1,5 +1,6 @@
 import numpy as np
 import random as rd
+from gensim.models import Word2Vec
 
 
 def sigmoid(n: float):
@@ -25,7 +26,6 @@ train_X = np.load('train_X.npy', allow_pickle=True)
 train_y = np.load('train_y.npy', allow_pickle=True)
 np.random.seed(42)
 rd.seed(42)
-
 
 
 class LSTM:
@@ -78,17 +78,6 @@ class LSTM:
         self.Who = Who
 
 
-        #remove this
-        self.Wxc = np.array([0.45, 0.25])
-        self.Wxi = np.array([0.95, 0.8])
-        self.Wxf = np.array([0.7, 0.45])
-        self.Wxo = np.array([0.6, 0.4])
-        self.Whi = np.array([0.8])
-        self.Whf = np.array([0.1])
-        self.Who = np.array([0.25])
-        self.Whc = np.array([0.15])
-
-
         self.Wx = np.array([self.Wxc, self.Wxi, self.Wxf, self.Wxo])
         self.Wh = np.array([self.Whc, self.Whi, self.Whf, self.Who])
 
@@ -97,11 +86,6 @@ class LSTM:
         self.bc = bc
         self.bo = bo
 
-        #remove this
-        self.bc = np.array([0.2])
-        self.bi = np.array([0.65])
-        self.bf = np.array([0.15])
-        self.bo = np.array([0.1])
         self.b = np.array([self.bc, self.bi, self.bf, self.bo])
         self.nUnits = nUnits
         self.nGates = nGates
@@ -143,9 +127,7 @@ class LSTM:
         return self.C[t], self.h[t]
 
     def setInput(self, x):
-        self.x[0] = x[0]
-        self.getNewState(0)
-        for t in range(1, self.nInputs):
+        for t in range(0, self.nInputs):
             self.x[t] = x[t]
             self.getNewState(t)
         return
@@ -209,10 +191,9 @@ class LSTM:
         # not too sure about delta because I only have 1 output
         for t in range(self.nInputs - 1, -1, -1):
             # I need the dot product to have dimensions batchsize, 1
-            # not sure if its working, have to see after t is bigger than 0
             triangle[t] = self.h[t] - y[t]
-            """for j in range(self.batchSize):
-                triangleH[t, j] = np.dot(np.transpose(Wh), deltaGates[t + 1,:,j])"""
+            for j in range(self.batchSize):
+                triangleH[t, j] = np.dot(np.transpose(Wh), deltaGates[t + 1,:,j])
             deltaH[t] = triangle[t] + triangleH[t]
             deltaC[t] = deltaH[t] * o[t] * (1 - pow(tanh(C[t]), 2)) + deltaC[t + 1] * f[t + 1]
             deltaTildeC[t] = deltaC[t] * i[t] * (1 - pow(tildeC[t], 2))
@@ -255,25 +236,31 @@ class LSTM:
         eta = learningRate
         etaChangeEpoch = 0
         for epoch in range(nEpochs):
-            #batch = rd.sample(np.shape(X)[0], SGDbatchSize)
+            batch = rd.sample(np.shape(X)[0], SGDbatchSize)
             nablaWx = np.zeros_like(self.Wx)
             nablaWh = np.zeros_like(self.Wh)
             nablaB = np.zeros_like(self.b)
             for i in range(0, SGDbatchSize, self.batchSize):
-                # shaping the input to have the same dimensions as x[t] and h[t]
-                """batchX = np.zeros((self.nInputs, self.batchSize, self.nFeatures))
+
+                # getting the batches
+                batchX = []
+                batchY = []
                 for j in range(self.batchSize):
-                    batchX[:, j] = np.reshape(X[batch[i]], (-1, self.nFeatures))
-                for j in range(self.nInputs):
-                    batchX[i+j] = X[batch[i]]"""
+                    batchX.append(X[batch[i+j]])
+                    batchY.append(y[batch[i+j]])
+
+                # shaping the input to have the same dimensions as x[t]
+                shapedBatchX = np.zeros((self.nInputs, self.batchSize, self.nFeatures))
+                for j in range(self.batchSize):
+                    shapedBatchX[:, j, :] = batchX[j]
 
                 # shaping the output to have the same dimensions as h[t]
-                #batchY = np.reshape(y[i:i + self.batchSize], (-1, self.nUnits))
+                shapedBatchY = np.reshape(batchY, (-1, self.nUnits))
 
 
-                self.setInput(X)
+                self.setInput(shapedBatchX)
                 # finding what should be modified based on this particular example
-                deltaNablaWx, deltaNablaWh, deltaNablaB = self.backProp(y)
+                deltaNablaWx, deltaNablaWh, deltaNablaB = self.backProp(shapedBatchY)
                 # passing this modifications to our overall modifications matrices
                 nablaWx += deltaNablaWx
                 nablaWh += deltaNablaWh
@@ -291,11 +278,22 @@ class LSTM:
                 print(f'learningRate: {learningRate} epochs: {epoch} mse: {mse}, outputs: {outputs}')
         print(f'best acc: {bestMse} on epoch: {bestEpoch}')
 
+def embed(sentences, nFeatures):
+    s = []
+    for sentence in sentences:
+        for word in sentence:
+            s.append(word)
+    model = Word2Vec(sentences=s, vector_size=nFeatures, window=5, min_count=1, workers=4)
+    vectoredSentences = [[]]
+    for i in range(len(sentences)):
+        for word in sentences[i]:
+            vectoredSentences[i].append(model.wv[word])
+    return vectoredSentences
 
 etas = [0.1, 1, 10]
+features = 100
 for l in etas:
     print(f"learnign rate: {l}")
-    train_X = np.array(([1, 2], [0.5, 3]))
-    train_y = np.array((0.5,1.25))
-    lstm = LSTM(nInputs=2, nFeatures=2, nUnits=1, nOutputs=1, batchSize=1)
-    lstm.SGD(train_X, train_y, SGDbatchSize=1, nEpochs=200, learningRate=l, lamb=0)
+    lstm = LSTM(nInputs=80, nFeatures=features, nUnits=1, nOutputs=1, batchSize=1)
+    embTrain_X = embed(train_X, features)
+    lstm.SGD(embTrain_X, train_y, SGDbatchSize=1, nEpochs=200, learningRate=l, lamb=0)
