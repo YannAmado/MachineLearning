@@ -1,6 +1,5 @@
 import numpy as np
 import random as rd
-from gensim.models import Word2Vec
 
 
 def sigmoid(n: float):
@@ -236,7 +235,7 @@ class LSTM:
         eta = learningRate
         etaChangeEpoch = 0
         for epoch in range(nEpochs):
-            batch = rd.sample(np.shape(X)[0], SGDbatchSize)
+            batch = rd.sample(range(np.shape(X)[0]), SGDbatchSize)
             nablaWx = np.zeros_like(self.Wx)
             nablaWh = np.zeros_like(self.Wh)
             nablaB = np.zeros_like(self.b)
@@ -278,22 +277,11 @@ class LSTM:
                 print(f'learningRate: {learningRate} epochs: {epoch} mse: {mse}, outputs: {outputs}')
         print(f'best acc: {bestMse} on epoch: {bestEpoch}')
 
-def embed(sentences, nFeatures):
-    s = []
-    for sentence in sentences:
-        for word in sentence:
-            s.append(word)
-    model = Word2Vec(sentences=s, vector_size=nFeatures, window=5, min_count=1, workers=4)
-    vectoredSentences = [[]]
-    for i in range(len(sentences)):
-        for word in sentences[i]:
-            vectoredSentences[i].append(model.wv[word])
-    return vectoredSentences
+
 
 etas = [0.1, 1, 10]
 features = 100
 for l in etas:
-    print(f"learnign rate: {l}")
+    print(f"learning rate: {l}")
     lstm = LSTM(nInputs=80, nFeatures=features, nUnits=1, nOutputs=1, batchSize=1)
-    embTrain_X = embed(train_X, features)
     lstm.SGD(embTrain_X, train_y, SGDbatchSize=1, nEpochs=200, learningRate=l, lamb=0)
